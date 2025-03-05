@@ -17,42 +17,15 @@ serve(async (req) => {
     const { videoData, userId } = await req.json();
 
     console.log("Received request to analyze video for user:", userId);
-    console.log("Video data:", JSON.stringify(videoData));
     
-    // Generate some randomness based on the video data to provide varied results
-    const randomSeed = videoData.fileName.length + videoData.fileSize % 100;
-    
-    // Generate dynamically different frames based on the video data
-    const generateFrameDescriptions = (seed: number) => {
-      const possibleFrames = [
-        "Person speaking directly to camera with good posture",
-        "Speaker making hand gestures to emphasize points",
-        "Speaker maintaining consistent eye contact",
-        "Speaker occasionally looking away from camera",
-        "Speaker appears confident during main points",
-        "Speaker using filler words during transitions",
-        "Speaker moving around too much",
-        "Speaker standing still with good posture",
-        "Speaker using slides effectively",
-        "Speaker showing nervous body language",
-        "Speaker speaking clearly and at a good pace",
-        "Speaker speaking too quickly at times",
-        "Speaker's voice dropping at the end of sentences",
-        "Speaker using effective pauses for emphasis",
-        "Speaker fidgeting with hands occasionally"
-      ];
-      
-      // Use the seed to select a varied but deterministic set of frames
-      const selectedFrames = [];
-      for (let i = 0; i < 5; i++) {
-        const index = (seed + i * 7) % possibleFrames.length;
-        selectedFrames.push(possibleFrames[index]);
-      }
-      
-      return selectedFrames;
-    };
-    
-    const videoFrames = generateFrameDescriptions(randomSeed);
+    // Simulate video frame extraction (in a real scenario, you would extract actual frames)
+    const fakeVideoFrames = [
+      "Person speaking directly to camera with good posture",
+      "Speaker making hand gestures to emphasize points",
+      "Speaker occasionally looking away from camera",
+      "Speaker appears confident during main points",
+      "Speaker using filler words during transitions"
+    ];
     
     // Call OpenAI to analyze video content
     const openAIApiKey = Deno.env.get('OPENAI_API_KEY');
@@ -78,13 +51,9 @@ serve(async (req) => {
       Also provide an overall score and at least 2 strengths and 3 areas for improvement.
       
       Video frames:
-      ${videoFrames.join("\n")}
+      ${fakeVideoFrames.join("\n")}
       
       Additionally, please provide 4 timeline insights at different points in the presentation.
-      
-      Important: Use the specific video content described in the frames to generate unique, personalized feedback.
-      If the frames suggest good eye contact, score that highly. If they suggest nervousness, reflect that in confidence.
-      Make your analysis reflect the actual content described in the frames.
       
       Format your response as a valid JSON object with the following structure:
       {
@@ -105,8 +74,6 @@ serve(async (req) => {
         ]
       }
     `;
-
-    console.log("Sending prompt to OpenAI:", prompt);
 
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
@@ -135,7 +102,6 @@ serve(async (req) => {
 
     const data = await response.json();
     const analysisContent = data.choices[0].message.content;
-    console.log("OpenAI response:", analysisContent);
     
     // Parse the JSON from the OpenAI response
     let analysis;
@@ -146,27 +112,17 @@ serve(async (req) => {
       
       const jsonStr = jsonMatch ? jsonMatch[1] || jsonMatch[0] : analysisContent;
       analysis = JSON.parse(jsonStr);
-      
-      // Ensure all required fields are present
-      if (!analysis.metrics || !analysis.feedback || !analysis.timelineInsights) {
-        throw new Error("Incomplete analysis structure");
-      }
     } catch (e) {
       console.error("Error parsing OpenAI response as JSON:", e, "Response was:", analysisContent);
-      
-      // Create a randomized but plausible fallback response based on the seed
-      const getRandomScore = (base: number, variance: number) => {
-        return Math.max(0, Math.min(100, base + (randomSeed % variance) - (variance / 2)));
-      };
-      
+      // If parsing fails, create a structured response manually
       analysis = {
         metrics: {
-          overall: getRandomScore(75, 20),
-          eyeContact: getRandomScore(70, 30),
-          confidence: getRandomScore(80, 25),
-          bodyLanguage: getRandomScore(75, 20),
-          speaking: getRandomScore(82, 18),
-          engagement: getRandomScore(73, 22)
+          overall: 76,
+          eyeContact: 72,
+          confidence: 80,
+          bodyLanguage: 75,
+          speaking: 82,
+          engagement: 70
         },
         feedback: [
           { type: "positive", text: "Good posture and confident delivery of main points" },
@@ -184,6 +140,8 @@ serve(async (req) => {
       };
     }
     
+    // In a real application, you would store this in the database
+    // For demo purposes, we'll just return the analysis
     console.log("Analysis completed successfully");
     
     return new Response(
