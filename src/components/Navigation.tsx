@@ -3,10 +3,19 @@ import React from "react";
 import { Link, useLocation } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { ChevronRight, LayoutDashboard, BarChart3, Settings, Upload } from "lucide-react";
+import { ChevronRight, LayoutDashboard, BarChart3, Settings, Upload, LogOut } from "lucide-react";
+import { useAuth } from "@/contexts/AuthContext";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { 
+  DropdownMenu, 
+  DropdownMenuContent, 
+  DropdownMenuItem, 
+  DropdownMenuTrigger 
+} from "@/components/ui/dropdown-menu";
 
 const Navigation = () => {
   const location = useLocation();
+  const { user, signOut } = useAuth();
   const isActive = (path: string) => location.pathname === path;
 
   const navItems = [
@@ -31,6 +40,13 @@ const Navigation = () => {
       path: "/settings",
     },
   ];
+
+  const getInitials = () => {
+    if (!user) return "?";
+    
+    const email = user.email || "";
+    return email.substring(0, 2).toUpperCase();
+  };
 
   return (
     <nav className="fixed top-0 left-0 h-screen w-64 glass border-r border-border shadow-sm z-10">
@@ -70,13 +86,42 @@ const Navigation = () => {
         </div>
         
         <div className="p-6">
-          <div className="glass rounded-lg p-4 text-sm">
-            <p className="font-medium mb-1">Upgrade to Pro</p>
-            <p className="text-muted-foreground text-xs mb-3">Get unlimited video analysis and advanced metrics</p>
-            <Button size="sm" className="w-full">
-              Upgrade
-            </Button>
-          </div>
+          {user ? (
+            <div className="flex items-center gap-3 p-3 glass rounded-lg">
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Avatar className="cursor-pointer">
+                    <AvatarImage src={user.user_metadata?.avatar_url} />
+                    <AvatarFallback>{getInitials()}</AvatarFallback>
+                  </Avatar>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start">
+                  <DropdownMenuItem>Profile</DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => signOut()}>
+                    <LogOut className="mr-2 h-4 w-4" /> Log out
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+              <div className="overflow-hidden">
+                <p className="text-sm font-medium truncate">
+                  {user.user_metadata?.full_name || user.email}
+                </p>
+                <p className="text-xs text-muted-foreground truncate">
+                  {user.email}
+                </p>
+              </div>
+            </div>
+          ) : (
+            <div className="glass rounded-lg p-4 text-sm">
+              <p className="font-medium mb-1">Sign In</p>
+              <p className="text-muted-foreground text-xs mb-3">Sign in to access all features</p>
+              <Link to="/auth">
+                <Button size="sm" className="w-full">
+                  Sign In
+                </Button>
+              </Link>
+            </div>
+          )}
         </div>
       </div>
     </nav>
