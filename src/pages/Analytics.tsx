@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from "react";
 import Layout from "@/components/Layout";
 import MetricsCard from "@/components/MetricsCard";
@@ -6,11 +5,39 @@ import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Eye, Activity, ThumbsUp, Clock, Download, Share2 } from "lucide-react";
+import { Eye, Activity, ThumbsUp, Clock, Download, Share2, AlertCircle } from "lucide-react";
 import { useParams } from "react-router-dom";
 import { PieChart, Pie, Cell, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Legend } from 'recharts';
+import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
+import { toast } from "sonner";
 
-const mockAnalysisData = {
+interface AnalysisData {
+  id: string;
+  title: string;
+  date: string;
+  duration: string;
+  url: string;
+  thumbnail: string;
+  metrics: {
+    overall: number;
+    eyeContact: number;
+    confidence: number;
+    bodyLanguage: number;
+    speaking: number;
+    engagement: number;
+  };
+  feedback: {
+    type: string;
+    text: string;
+  }[];
+  timelineInsights: {
+    timepoint: string;
+    insight: string;
+  }[];
+}
+
+const mockAnalysisData: AnalysisData = {
   id: "new",
   title: "Job Interview Practice",
   date: "Today",
@@ -59,7 +86,37 @@ const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884D8', '#82ca9d'
 
 const Analytics = () => {
   const { id } = useParams();
-  const [analysisData, setAnalysisData] = useState(mockAnalysisData);
+  const { user } = useAuth();
+  const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
+  const [analysisData, setAnalysisData] = useState<AnalysisData>(mockAnalysisData);
+  
+  useEffect(() => {
+    const fetchAnalysisData = async () => {
+      setLoading(true);
+      setError(null);
+      
+      try {
+        if (id === 'new') {
+          setAnalysisData({...mockAnalysisData, id: 'new'});
+          setLoading(false);
+          return;
+        }
+        
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        
+        setAnalysisData({...mockAnalysisData, id: id || 'unknown'});
+        setLoading(false);
+      } catch (err) {
+        console.error("Error fetching analysis:", err);
+        setError("Failed to load analysis data");
+        setLoading(false);
+        toast.error("Failed to load analysis data");
+      }
+    };
+    
+    fetchAnalysisData();
+  }, [id, user]);
   
   const metricsData = [
     { name: 'Eye Contact', value: analysisData.metrics.eyeContact },
@@ -77,6 +134,34 @@ const Analytics = () => {
     { name: '2:00', score: 85 },
     { name: '2:30', score: 80 },
   ];
+
+  if (loading) {
+    return (
+      <Layout>
+        <div className="max-w-6xl mx-auto flex items-center justify-center h-[70vh]">
+          <div className="text-center">
+            <div className="inline-block animate-spin rounded-full h-8 w-8 border-4 border-solid border-primary border-r-transparent align-[-0.125em] motion-reduce:animate-[spin_1.5s_linear_infinite] mb-4"></div>
+            <p className="text-muted-foreground">Loading analysis...</p>
+          </div>
+        </div>
+      </Layout>
+    );
+  }
+
+  if (error) {
+    return (
+      <Layout>
+        <div className="max-w-6xl mx-auto flex items-center justify-center h-[70vh]">
+          <div className="text-center">
+            <AlertCircle className="mx-auto h-12 w-12 text-destructive mb-4" />
+            <h2 className="text-xl font-semibold mb-2">Failed to load analysis</h2>
+            <p className="text-muted-foreground mb-4">{error}</p>
+            <Button onClick={() => window.location.reload()}>Try Again</Button>
+          </div>
+        </div>
+      </Layout>
+    );
+  }
 
   return (
     <Layout>
