@@ -55,10 +55,6 @@ const Upload = () => {
         .upload(filePath, selectedVideo, {
           cacheControl: '3600',
           upsert: false,
-          onUploadProgress: (progress) => {
-            const calculatedProgress = Math.round((progress.loaded / progress.total) * 100);
-            setUploadProgress(calculatedProgress);
-          },
         });
 
       if (uploadError) {
@@ -133,6 +129,7 @@ const Upload = () => {
       });
 
       if (error) {
+        console.error("Edge function error:", error);
         throw new Error(error.message);
       }
 
@@ -140,7 +137,7 @@ const Upload = () => {
       clearInterval(processingInterval);
       setProcessingProgress(100);
       
-      if (data.success) {
+      if (data?.success) {
         // Update the analysis record with the results
         const { error: updateError } = await supabase
           .from('video_analyses')
@@ -159,7 +156,8 @@ const Upload = () => {
         setUploadStatus(UploadStatus.COMPLETE);
         toast.success("Video analysis complete!");
       } else {
-        throw new Error("Analysis failed");
+        console.error("Analysis failed with data:", data);
+        throw new Error(data?.error || "Analysis failed");
       }
     } catch (error) {
       console.error("Processing error:", error);

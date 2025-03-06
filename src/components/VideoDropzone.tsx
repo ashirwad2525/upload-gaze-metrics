@@ -38,8 +38,16 @@ const VideoDropzone = ({ onVideoSelect, className }: VideoDropzoneProps) => {
   };
 
   const handleFileSelect = (file: File) => {
+    // Validate file type
     if (!file.type.startsWith("video/")) {
       toast.error("Please select a valid video file");
+      return;
+    }
+
+    // Check file size (limit to 200MB)
+    const maxSize = 200 * 1024 * 1024; // 200MB in bytes
+    if (file.size > maxSize) {
+      toast.error("Video file is too large. Please select a file under 200MB");
       return;
     }
 
@@ -54,11 +62,15 @@ const VideoDropzone = ({ onVideoSelect, className }: VideoDropzoneProps) => {
     const videoUrl = URL.createObjectURL(file);
     setVideoPreview(videoUrl);
     setSelectedFile(file);
+    
+    // Notify parent component
     onVideoSelect(file);
     
     setTimeout(() => {
       setIsLoading(false);
     }, 1000);
+
+    toast.success("Video selected successfully");
   };
 
   const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -134,6 +146,10 @@ const VideoDropzone = ({ onVideoSelect, className }: VideoDropzoneProps) => {
             src={videoPreview} 
             controls
             className="w-full rounded-xl max-h-96 object-contain bg-black"
+            onError={() => {
+              toast.error("Error loading video preview");
+              handleClearVideo();
+            }}
           />
           
           <div className="absolute bottom-0 left-0 right-0 p-4 glass">
