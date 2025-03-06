@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from "react";
 import Layout from "@/components/Layout";
 import MetricsCard from "@/components/MetricsCard";
@@ -12,6 +11,7 @@ import { PieChart, Pie, Cell, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, 
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
+import { Json } from "@/integrations/supabase/types";
 
 interface AnalysisData {
   id: string;
@@ -44,6 +44,76 @@ interface AnalysisData {
   transcriptId?: string;
 }
 
+const isObject = (value: unknown): value is Record<string, unknown> => {
+  return typeof value === 'object' && value !== null;
+};
+
+const isValidAnalysisJson = (data: Json): boolean => {
+  if (!isObject(data)) return false;
+  
+  return (
+    isObject(data.metrics) &&
+    Array.isArray(data.feedback) &&
+    Array.isArray(data.timelineInsights)
+  );
+};
+
+const extractAnalysisData = (analysisJson: Json | null): AnalysisData['metrics'] => {
+  if (!analysisJson || !isValidAnalysisJson(analysisJson)) {
+    return {
+      overall: 0,
+      eyeContact: 0,
+      confidence: 0,
+      bodyLanguage: 0,
+      speaking: 0,
+      engagement: 0
+    };
+  }
+  
+  const metrics = analysisJson.metrics as Record<string, number>;
+  
+  return {
+    overall: metrics.overall || 0,
+    eyeContact: metrics.eyeContact || 0,
+    confidence: metrics.confidence || 0,
+    bodyLanguage: metrics.bodyLanguage || 0,
+    speaking: metrics.speaking || 0,
+    engagement: metrics.engagement || 0
+  };
+};
+
+const extractFeedback = (analysisJson: Json | null): AnalysisData['feedback'] => {
+  if (!analysisJson || !isValidAnalysisJson(analysisJson)) {
+    return [];
+  }
+  
+  const feedback = analysisJson.feedback as Array<{type: string, text: string}>;
+  return feedback || [];
+};
+
+const extractTimelineInsights = (analysisJson: Json | null): AnalysisData['timelineInsights'] => {
+  if (!analysisJson || !isValidAnalysisJson(analysisJson)) {
+    return [];
+  }
+  
+  const insights = analysisJson.timelineInsights as Array<{timepoint: string, insight: string}>;
+  return insights || [];
+};
+
+const extractSpeechMetrics = (analysisJson: Json | null): AnalysisData['speechMetrics'] | undefined => {
+  if (!analysisJson || !isValidAnalysisJson(analysisJson) || !isObject(analysisJson.speechMetrics)) {
+    return undefined;
+  }
+  
+  const metrics = analysisJson.speechMetrics as Record<string, any>;
+  
+  return {
+    wordsPerMinute: metrics.wordsPerMinute || 0,
+    fillerWordRate: metrics.fillerWordRate || "0%",
+    duration: metrics.duration || "0:00"
+  };
+};
+
 const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884D8', '#82ca9d'];
 
 const Analytics = () => {
@@ -64,7 +134,6 @@ const Analytics = () => {
           throw new Error("Missing analysis ID or user is not logged in");
         }
         
-        // Fetch the analysis record from the database
         const { data: analysisRecord, error: fetchError } = await supabase
           .from('video_analyses')
           .select('*')
@@ -81,7 +150,6 @@ const Analytics = () => {
           throw new Error("Analysis not found");
         }
         
-        // Get the video URL from storage
         const { data: urlData } = await supabase.storage
           .from('videos')
           .createSignedUrl(analysisRecord.video_path, 3600); // 1 hour expiry
@@ -90,23 +158,16 @@ const Analytics = () => {
           setVideoUrl(urlData.signedUrl);
         }
         
-        // Format the data for display
         const formattedData: AnalysisData = {
           id: analysisRecord.id,
           title: "Video Analysis",
           date: new Date(analysisRecord.created_at).toLocaleDateString(),
-          metrics: analysisRecord.analysis?.metrics || {
-            overall: 0,
-            eyeContact: 0,
-            confidence: 0,
-            bodyLanguage: 0,
-            speaking: 0,
-            engagement: 0
-          },
-          feedback: analysisRecord.analysis?.feedback || [],
-          timelineInsights: analysisRecord.analysis?.timelineInsights || [],
-          speechMetrics: analysisRecord.analysis?.speechMetrics || undefined,
-          transcriptId: analysisRecord.analysis?.transcriptId || undefined
+          metrics: extractAnalysisData(analysisRecord.analysis),
+          feedback: extractFeedback(analysisRecord.analysis),
+          timelineInsights: extractTimelineInsights(analysisRecord.analysis),
+          speechMetrics: extractSpeechMetrics(analysisRecord.analysis),
+          transcriptId: isObject(analysisRecord.analysis) ? 
+            (analysisRecord.analysis.transcriptId as string) : undefined
         };
         
         setAnalysisData(formattedData);
@@ -122,7 +183,6 @@ const Analytics = () => {
     fetchAnalysisData();
   }, [id, user]);
   
-  // Prepare data for charts
   const getMetricsData = () => {
     if (!analysisData) return [];
     
@@ -135,25 +195,21 @@ const Analytics = () => {
     ];
   };
 
-  // Create simulated timeline data
   const getTimelineData = () => {
     if (!analysisData || !analysisData.timelineInsights.length) return [];
     
-    // Create a timeline chart with points based on the timelineInsights
     const timelinePoints = analysisData.timelineInsights.map((insight, index) => {
-      // Convert timepoint (e.g. "1:30") to a number of seconds for sorting
       const timeParts = insight.timepoint.split(':');
       const seconds = parseInt(timeParts[0]) * 60 + parseInt(timeParts[1]);
       
       return {
         name: insight.timepoint,
-        seconds, // Store seconds for sorting
-        score: 60 + (Math.sin(index * 1.5) * 20) + (Math.random() * 10), // Generate plausible score variation
-        insight: insight.insight // Keep the insight text
+        seconds,
+        score: 60 + (Math.sin(index * 1.5) * 20) + (Math.random() * 10),
+        insight: insight.insight
       };
     });
     
-    // Sort by time and remove the seconds property
     return timelinePoints
       .sort((a, b) => a.seconds - b.seconds)
       .map(({ name, score, insight }) => ({ name, score, insight }));
@@ -313,7 +369,6 @@ const Analytics = () => {
           />
         </div>
 
-        {/* Add speech metrics section */}
         {analysisData.speechMetrics && (
           <div className="mb-8">
             <div className="flex items-center gap-2 mb-4">
