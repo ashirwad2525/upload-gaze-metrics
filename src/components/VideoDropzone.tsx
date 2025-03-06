@@ -16,6 +16,7 @@ const VideoDropzone = ({ onVideoSelect, className }: VideoDropzoneProps) => {
   const [videoPreview, setVideoPreview] = useState<string | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
 
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
@@ -44,6 +45,11 @@ const VideoDropzone = ({ onVideoSelect, className }: VideoDropzoneProps) => {
 
     setIsLoading(true);
     
+    // Clean up previous video URL if it exists
+    if (videoPreview) {
+      URL.revokeObjectURL(videoPreview);
+    }
+    
     // Generate video preview URL
     const videoUrl = URL.createObjectURL(file);
     setVideoPreview(videoUrl);
@@ -63,6 +69,9 @@ const VideoDropzone = ({ onVideoSelect, className }: VideoDropzoneProps) => {
   };
 
   const handleClearVideo = () => {
+    if (videoPreview) {
+      URL.revokeObjectURL(videoPreview);
+    }
     setVideoPreview(null);
     setSelectedFile(null);
     if (fileInputRef.current) {
@@ -121,6 +130,7 @@ const VideoDropzone = ({ onVideoSelect, className }: VideoDropzoneProps) => {
           )}
           
           <video 
+            ref={videoRef}
             src={videoPreview} 
             controls
             className="w-full rounded-xl max-h-96 object-contain bg-black"

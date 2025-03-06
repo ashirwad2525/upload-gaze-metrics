@@ -17,9 +17,9 @@ serve(async (req) => {
     const { videoData, userId } = await req.json();
 
     console.log("Received request to analyze video for user:", userId);
-    console.log("Video data sample:", videoData?.fileName, videoData?.fileSize);
+    console.log("Video data sample:", videoData?.fileName, videoData?.fileSize, "Path:", videoData?.videoPath);
     
-    if (!videoData || !videoData.fileName) {
+    if (!videoData || !videoData.fileName || !videoData.videoPath) {
       console.error("Invalid video data received");
       return new Response(
         JSON.stringify({ error: "Invalid video data" }),
@@ -203,14 +203,10 @@ serve(async (req) => {
       
       console.log("Analysis completed successfully");
       
-      // Add a unique ID for the video analysis
-      const videoId = crypto.randomUUID();
-      
       return new Response(
         JSON.stringify({
           success: true,
-          analysis: analysis,
-          videoId: videoId
+          analysis: analysis
         }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );

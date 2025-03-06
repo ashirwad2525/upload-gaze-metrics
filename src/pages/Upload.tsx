@@ -1,4 +1,3 @@
-
 import React, { useState } from "react";
 import Layout from "@/components/Layout";
 import VideoDropzone from "@/components/VideoDropzone";
@@ -46,33 +45,55 @@ const Upload = () => {
     setUploadProgress(0);
 
     try {
-      // Simulate upload progress
-      const uploadInterval = setInterval(() => {
-        setUploadProgress(prev => {
-          const newProgress = prev + 5;
-          if (newProgress >= 100) {
-            clearInterval(uploadInterval);
-            return 100;
-          }
-          return newProgress;
-        });
-      }, 200);
+      // Create a unique file path for the user's video
+      const videoId = crypto.randomUUID();
+      const filePath = `${user.id}/${videoId}/${selectedVideo.name}`;
 
-      // After upload completes
-      setTimeout(() => {
-        clearInterval(uploadInterval);
-        setUploadProgress(100);
-        setUploadStatus(UploadStatus.PROCESSING);
-        processVideo();
-      }, 4000);
+      // Upload the video to Supabase Storage
+      const { error: uploadError, data } = await supabase.storage
+        .from('videos')
+        .upload(filePath, selectedVideo, {
+          cacheControl: '3600',
+          upsert: false,
+          onUploadProgress: (progress) => {
+            const calculatedProgress = Math.round((progress.loaded / progress.total) * 100);
+            setUploadProgress(calculatedProgress);
+          },
+        });
+
+      if (uploadError) {
+        console.error('Error uploading video:', uploadError);
+        throw new Error(`Error uploading video: ${uploadError.message}`);
+      }
+
+      // Create initial video analysis record
+      const { error: insertError, data: analysisRecord } = await supabase
+        .from('video_analyses')
+        .insert({
+          user_id: user.id,
+          video_path: filePath,
+          status: 'processing'
+        })
+        .select('id')
+        .single();
+
+      if (insertError) {
+        console.error('Error creating analysis record:', insertError);
+        throw new Error(`Error creating analysis record: ${insertError.message}`);
+      }
+
+      // After successful upload, move to processing
+      setUploadProgress(100);
+      setUploadStatus(UploadStatus.PROCESSING);
+      processVideo(filePath, analysisRecord.id);
     } catch (error) {
       console.error("Upload error:", error);
       setUploadStatus(UploadStatus.ERROR);
-      toast.error("Failed to upload video");
+      toast.error(error instanceof Error ? error.message : "Failed to upload video");
     }
   };
 
-  const processVideo = async () => {
+  const processVideo = async (videoPath: string, videoAnalysisId: string) => {
     setProcessingProgress(0);
     
     // Simulate processing progress
@@ -88,16 +109,24 @@ const Upload = () => {
     }, 300);
     
     try {
-      // Generate a base64 preview of the video (simulated for demo)
-      const videoPreview = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAAMCAgMCAgMDAwMEAwMEBQgFBQQEBQoHBwYIDAoMDAsKCwsNDhIQDQ4RDgsLEBYQERMUFRUVDA8XGBYUGBIUFRT/2wBDAQMEBAUEBQkFBQkUDQsNFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBT/wgARCAAIABQDASIAAhEBAxEB/8QAFgABAQEAAAAAAAAAAAAAAAAAAAUH/8QAFAEBAAAAAAAAAAAAAAAAAAAAAP/aAAwDAQACEAMQAAABvuSaBP/EABkQAAIDAQAAAAAAAAAAAAAAAAACEgMTIf/aAAgBAQABBQLHS1dHnEf/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oACAEDAQE/AX//xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oACAECAQE/AX//xAAaEAACAgMAAAAAAAAAAAAAAAABAgAREiOB/9oACAEBAAY/AtDZJVLC6kR1P//EABkQAAIDAQAAAAAAAAAAAAAAAAERABAhMf/aAAgBAQABPyFUHJdBGXEff//aAAwDAQACAAMAAAAQw+//xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oACAEDAQE/EH//xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oACAECAQE/EH//xAAcEAEAAgEFAAAAAAAAAAAAAAABABEhQWFxkbH/2gAIAQEAAT8QXFQ7mYQhYbXJsNHSpNYPRyn/2Q==";
+      // Get the video URL
+      const { data: urlData } = await supabase.storage
+        .from('videos')
+        .createSignedUrl(videoPath, 60); // 60 seconds expiry
+      
+      if (!urlData || !urlData.signedUrl) {
+        throw new Error("Could not generate video URL");
+      }
       
       // Call our edge function to analyze the video
       const { data, error } = await supabase.functions.invoke('analyze-video', {
         body: {
           videoData: {
-            fileName: selectedVideo.name,
-            fileSize: selectedVideo.size,
-            preview: videoPreview
+            fileName: selectedVideo!.name,
+            fileSize: selectedVideo!.size,
+            videoUrl: urlData.signedUrl,
+            videoPath: videoPath,
+            analysisId: videoAnalysisId
           },
           userId: user?.id
         }
@@ -108,23 +137,45 @@ const Upload = () => {
       }
 
       // After processing completes
-      setTimeout(() => {
-        clearInterval(processingInterval);
-        setProcessingProgress(100);
-        
-        if (data.success) {
-          setAnalysisId(data.videoId);
-          setUploadStatus(UploadStatus.COMPLETE);
-          toast.success("Video analysis complete!");
-        } else {
-          throw new Error("Analysis failed");
+      clearInterval(processingInterval);
+      setProcessingProgress(100);
+      
+      if (data.success) {
+        // Update the analysis record with the results
+        const { error: updateError } = await supabase
+          .from('video_analyses')
+          .update({
+            analysis: data.analysis,
+            status: 'completed'
+          })
+          .eq('id', videoAnalysisId);
+          
+        if (updateError) {
+          console.error("Error updating analysis record:", updateError);
+          throw new Error(`Error updating analysis record: ${updateError.message}`);
         }
-      }, 3000);
+        
+        setAnalysisId(videoAnalysisId);
+        setUploadStatus(UploadStatus.COMPLETE);
+        toast.success("Video analysis complete!");
+      } else {
+        throw new Error("Analysis failed");
+      }
     } catch (error) {
       console.error("Processing error:", error);
       clearInterval(processingInterval);
       setUploadStatus(UploadStatus.ERROR);
-      toast.error("Failed to analyze video");
+      toast.error(error instanceof Error ? error.message : "Failed to analyze video");
+      
+      // Update the analysis record with the error status
+      if (videoAnalysisId) {
+        await supabase
+          .from('video_analyses')
+          .update({
+            status: 'error'
+          })
+          .eq('id', videoAnalysisId);
+      }
     }
   };
 

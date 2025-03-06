@@ -36,6 +36,36 @@ export type Database = {
         }
         Relationships: []
       }
+      video_analyses: {
+        Row: {
+          analysis: Json | null
+          created_at: string
+          id: string
+          status: string
+          updated_at: string
+          user_id: string
+          video_path: string
+        }
+        Insert: {
+          analysis?: Json | null
+          created_at?: string
+          id?: string
+          status?: string
+          updated_at?: string
+          user_id: string
+          video_path: string
+        }
+        Update: {
+          analysis?: Json | null
+          created_at?: string
+          id?: string
+          status?: string
+          updated_at?: string
+          user_id?: string
+          video_path?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
