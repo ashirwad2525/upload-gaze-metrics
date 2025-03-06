@@ -41,7 +41,15 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      insert_video_analysis: {
+        Args: {
+          p_video_path: string
+          p_expires_at: string
+          p_analysis: Json
+          p_status: string
+        }
+        Returns: undefined
+      }
     }
     Enums: {
       [_ in never]: never

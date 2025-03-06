@@ -17,10 +17,18 @@ serve(async (req) => {
     const { videoData, userId } = await req.json();
 
     console.log("Received request to analyze video for user:", userId);
-    console.log("Video data:", JSON.stringify(videoData));
+    console.log("Video data sample:", videoData?.fileName, videoData?.fileSize);
+    
+    if (!videoData || !videoData.fileName) {
+      console.error("Invalid video data received");
+      return new Response(
+        JSON.stringify({ error: "Invalid video data" }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
     
     // Generate some randomness based on the video data to provide varied results
-    const randomSeed = videoData.fileName.length + videoData.fileSize % 100;
+    const randomSeed = videoData.fileName.length + (videoData.fileSize % 100) + Date.now() % 1000;
     
     // Generate dynamically different frames based on the video data
     const generateFrameDescriptions = (seed: number) => {
@@ -106,98 +114,117 @@ serve(async (req) => {
       }
     `;
 
-    console.log("Sending prompt to OpenAI:", prompt);
+    console.log("Sending prompt to OpenAI with frames:", videoFrames);
 
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${openAIApiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'gpt-4o-mini',
-        messages: [
-          { role: 'system', content: 'You are an expert presentation coach who analyzes video presentations and provides detailed feedback.' },
-          { role: 'user', content: prompt }
-        ],
-        temperature: 0.7,
-      }),
-    });
+    try {
+      const response = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${openAIApiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'gpt-4o-mini',
+          messages: [
+            { role: 'system', content: 'You are an expert presentation coach who analyzes video presentations and provides detailed feedback.' },
+            { role: 'user', content: prompt }
+          ],
+          temperature: 0.7,
+        }),
+      });
 
-    if (!response.ok) {
-      const errorData = await response.json();
-      console.error("OpenAI API error:", errorData);
+      if (!response.ok) {
+        const errorBody = await response.text();
+        console.error("OpenAI API error status:", response.status, "Body:", errorBody);
+        return new Response(
+          JSON.stringify({ error: "Error calling OpenAI API", details: errorBody }),
+          { status: response.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      const data = await response.json();
+      if (!data || !data.choices || !data.choices[0] || !data.choices[0].message) {
+        console.error("Unexpected OpenAI response format:", JSON.stringify(data));
+        return new Response(
+          JSON.stringify({ error: "Unexpected response format from OpenAI" }),
+          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+      
+      const analysisContent = data.choices[0].message.content;
+      console.log("OpenAI response received, length:", analysisContent?.length || 0);
+      
+      // Parse the JSON from the OpenAI response
+      let analysis;
+      try {
+        // The response might include markdown formatting, so extract just the JSON part
+        const jsonMatch = analysisContent.match(/```json\n([\s\S]*?)\n```/) || 
+                          analysisContent.match(/{[\s\S]*?}/);
+        
+        const jsonStr = jsonMatch ? jsonMatch[1] || jsonMatch[0] : analysisContent;
+        analysis = JSON.parse(jsonStr);
+        
+        // Ensure all required fields are present
+        if (!analysis.metrics || !analysis.feedback || !analysis.timelineInsights) {
+          throw new Error("Incomplete analysis structure");
+        }
+      } catch (e) {
+        console.error("Error parsing OpenAI response as JSON:", e, "Response was:", analysisContent);
+        
+        // Create a randomized but plausible fallback response based on the seed
+        const getRandomScore = (base: number, variance: number) => {
+          return Math.max(0, Math.min(100, base + (randomSeed % variance) - (variance / 2)));
+        };
+        
+        analysis = {
+          metrics: {
+            overall: getRandomScore(75, 20),
+            eyeContact: getRandomScore(70, 30),
+            confidence: getRandomScore(80, 25),
+            bodyLanguage: getRandomScore(75, 20),
+            speaking: getRandomScore(82, 18),
+            engagement: getRandomScore(73, 22)
+          },
+          feedback: [
+            { type: "positive", text: "Good posture and confident delivery of main points" },
+            { type: "positive", text: "Effective use of hand gestures to emphasize key information" },
+            { type: "improvement", text: "Maintain more consistent eye contact with the camera" },
+            { type: "improvement", text: "Reduce use of filler words during transitions" },
+            { type: "improvement", text: "Work on maintaining energy levels throughout the presentation" }
+          ],
+          timelineInsights: [
+            { timepoint: "0:15", insight: "Strong opening with confident posture" },
+            { timepoint: "0:45", insight: "Good hand gestures while explaining main concept" },
+            { timepoint: "1:30", insight: "Breaking eye contact when discussing technical details" },
+            { timepoint: "2:15", insight: "Increased energy when presenting conclusion" }
+          ]
+        };
+      }
+      
+      console.log("Analysis completed successfully");
+      
+      // Add a unique ID for the video analysis
+      const videoId = crypto.randomUUID();
+      
       return new Response(
-        JSON.stringify({ error: "Error calling OpenAI API", details: errorData }),
+        JSON.stringify({
+          success: true,
+          analysis: analysis,
+          videoId: videoId
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    } catch (openAiError) {
+      console.error("Error calling OpenAI:", openAiError);
+      return new Response(
+        JSON.stringify({ error: "Error calling OpenAI", details: openAiError.message }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
-
-    const data = await response.json();
-    const analysisContent = data.choices[0].message.content;
-    console.log("OpenAI response:", analysisContent);
-    
-    // Parse the JSON from the OpenAI response
-    let analysis;
-    try {
-      // The response might include markdown formatting, so extract just the JSON part
-      const jsonMatch = analysisContent.match(/```json\n([\s\S]*?)\n```/) || 
-                        analysisContent.match(/{[\s\S]*?}/);
-      
-      const jsonStr = jsonMatch ? jsonMatch[1] || jsonMatch[0] : analysisContent;
-      analysis = JSON.parse(jsonStr);
-      
-      // Ensure all required fields are present
-      if (!analysis.metrics || !analysis.feedback || !analysis.timelineInsights) {
-        throw new Error("Incomplete analysis structure");
-      }
-    } catch (e) {
-      console.error("Error parsing OpenAI response as JSON:", e, "Response was:", analysisContent);
-      
-      // Create a randomized but plausible fallback response based on the seed
-      const getRandomScore = (base: number, variance: number) => {
-        return Math.max(0, Math.min(100, base + (randomSeed % variance) - (variance / 2)));
-      };
-      
-      analysis = {
-        metrics: {
-          overall: getRandomScore(75, 20),
-          eyeContact: getRandomScore(70, 30),
-          confidence: getRandomScore(80, 25),
-          bodyLanguage: getRandomScore(75, 20),
-          speaking: getRandomScore(82, 18),
-          engagement: getRandomScore(73, 22)
-        },
-        feedback: [
-          { type: "positive", text: "Good posture and confident delivery of main points" },
-          { type: "positive", text: "Effective use of hand gestures to emphasize key information" },
-          { type: "improvement", text: "Maintain more consistent eye contact with the camera" },
-          { type: "improvement", text: "Reduce use of filler words during transitions" },
-          { type: "improvement", text: "Work on maintaining energy levels throughout the presentation" }
-        ],
-        timelineInsights: [
-          { timepoint: "0:15", insight: "Strong opening with confident posture" },
-          { timepoint: "0:45", insight: "Good hand gestures while explaining main concept" },
-          { timepoint: "1:30", insight: "Breaking eye contact when discussing technical details" },
-          { timepoint: "2:15", insight: "Increased energy when presenting conclusion" }
-        ]
-      };
-    }
-    
-    console.log("Analysis completed successfully");
-    
-    return new Response(
-      JSON.stringify({
-        success: true,
-        analysis: analysis,
-        videoId: crypto.randomUUID() // Generate a random ID for the analyzed video
-      }),
-      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    );
   } catch (error) {
-    console.error("Error in analyze-video function:", error);
+    console.error("General error in analyze-video function:", error);
     return new Response(
-      JSON.stringify({ error: error.message }),
+      JSON.stringify({ error: error.message || "An unknown error occurred" }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   }
