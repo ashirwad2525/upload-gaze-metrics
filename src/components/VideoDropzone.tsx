@@ -53,6 +53,11 @@ const VideoDropzone = ({ onVideoSelect, className }: VideoDropzoneProps) => {
       return;
     }
 
+    // Check for non-ASCII characters in filename which might cause issues
+    if (/[^\x00-\x7F]/g.test(file.name)) {
+      toast.warning("Your file name contains special characters which may cause issues. Consider renaming it with only English letters, numbers, and simple punctuation.");
+    }
+
     setIsLoading(true);
     
     // Clean up previous video URL if it exists

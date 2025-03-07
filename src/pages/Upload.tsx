@@ -1,3 +1,4 @@
+
 import React, { useState } from "react";
 import Layout from "@/components/Layout";
 import VideoDropzone from "@/components/VideoDropzone";
@@ -25,9 +26,15 @@ const Upload = () => {
   const [uploadProgress, setUploadProgress] = useState(0);
   const [processingProgress, setProcessingProgress] = useState(0);
   const [analysisId, setAnalysisId] = useState<string | null>(null);
+  const [errorDetails, setErrorDetails] = useState<string | null>(null);
 
   const handleVideoSelect = (file: File) => {
     setSelectedVideo(file);
+    // Reset any previous error states
+    setErrorDetails(null);
+    if (uploadStatus === UploadStatus.ERROR) {
+      setUploadStatus(UploadStatus.IDLE);
+    }
   };
 
   const handleUpload = async () => {
@@ -43,11 +50,20 @@ const Upload = () => {
 
     setUploadStatus(UploadStatus.UPLOADING);
     setUploadProgress(0);
+    setErrorDetails(null);
 
     try {
       // Create a unique file path for the user's video
       const videoId = crypto.randomUUID();
-      const filePath = `${user.id}/${videoId}/${selectedVideo.name}`;
+      
+      // Sanitize the filename to avoid special character issues
+      const sanitizedFileName = selectedVideo.name
+        .replace(/[^a-zA-Z0-9.-]/g, '_') // Replace special chars with underscore
+        .replace(/\s+/g, '_'); // Replace spaces with underscore
+      
+      const filePath = `videos/${user.id}/${videoId}/${sanitizedFileName}`;
+
+      console.log("Attempting to upload video to path:", filePath);
 
       // Upload the video to Supabase Storage
       const { error: uploadError, data } = await supabase.storage
@@ -61,6 +77,8 @@ const Upload = () => {
         console.error('Error uploading video:', uploadError);
         throw new Error(`Error uploading video: ${uploadError.message}`);
       }
+
+      console.log("Video uploaded successfully:", data);
 
       // Create initial video analysis record
       const { error: insertError, data: analysisRecord } = await supabase
@@ -85,6 +103,7 @@ const Upload = () => {
     } catch (error) {
       console.error("Upload error:", error);
       setUploadStatus(UploadStatus.ERROR);
+      setErrorDetails(error instanceof Error ? error.message : "Failed to upload video");
       toast.error(error instanceof Error ? error.message : "Failed to upload video");
     }
   };
@@ -96,23 +115,16 @@ const Upload = () => {
     const processingInterval = setInterval(() => {
       setProcessingProgress(prev => {
         const newProgress = prev + 2;
-        if (newProgress >= 100) {
+        if (newProgress >= 95) { // Only go to 95% automatically, save 100% for actual completion
           clearInterval(processingInterval);
-          return 100;
+          return 95;
         }
         return newProgress;
       });
     }, 300);
     
     try {
-      // Get the video URL
-      const { data: urlData } = await supabase.storage
-        .from('videos')
-        .createSignedUrl(videoPath, 60); // 60 seconds expiry
-      
-      if (!urlData || !urlData.signedUrl) {
-        throw new Error("Could not generate video URL");
-      }
+      console.log("Processing video analysis with ID:", videoAnalysisId);
       
       // Call our edge function to analyze the video
       const { data, error } = await supabase.functions.invoke('analyze-video', {
@@ -120,7 +132,6 @@ const Upload = () => {
           videoData: {
             fileName: selectedVideo!.name,
             fileSize: selectedVideo!.size,
-            videoUrl: urlData.signedUrl,
             videoPath: videoPath,
             analysisId: videoAnalysisId
           },
@@ -128,41 +139,45 @@ const Upload = () => {
         }
       });
 
+      // Check for edge function error
       if (error) {
         console.error("Edge function error:", error);
-        throw new Error(error.message);
+        throw new Error(error.message || "Failed to analyze video");
+      }
+
+      // Check if the response indicates an error
+      if (!data?.success) {
+        console.error("Analysis failed with data:", data);
+        throw new Error(data?.error || "Analysis failed");
       }
 
       // After processing completes
       clearInterval(processingInterval);
       setProcessingProgress(100);
       
-      if (data?.success) {
-        // Update the analysis record with the results
-        const { error: updateError } = await supabase
-          .from('video_analyses')
-          .update({
-            analysis: data.analysis,
-            status: 'completed'
-          })
-          .eq('id', videoAnalysisId);
-          
-        if (updateError) {
-          console.error("Error updating analysis record:", updateError);
-          throw new Error(`Error updating analysis record: ${updateError.message}`);
-        }
+      // Update the analysis record with the results
+      const { error: updateError } = await supabase
+        .from('video_analyses')
+        .update({
+          analysis: data.analysis,
+          status: 'completed'
+        })
+        .eq('id', videoAnalysisId);
         
-        setAnalysisId(videoAnalysisId);
-        setUploadStatus(UploadStatus.COMPLETE);
-        toast.success("Video analysis complete!");
-      } else {
-        console.error("Analysis failed with data:", data);
-        throw new Error(data?.error || "Analysis failed");
+      if (updateError) {
+        console.error("Error updating analysis record:", updateError);
+        throw new Error(`Error updating analysis record: ${updateError.message}`);
       }
+      
+      console.log("Analysis completed successfully:", data.analysis);
+      setAnalysisId(videoAnalysisId);
+      setUploadStatus(UploadStatus.COMPLETE);
+      toast.success("Video analysis complete!");
     } catch (error) {
       console.error("Processing error:", error);
       clearInterval(processingInterval);
       setUploadStatus(UploadStatus.ERROR);
+      setErrorDetails(error instanceof Error ? error.message : "Failed to analyze video");
       toast.error(error instanceof Error ? error.message : "Failed to analyze video");
       
       // Update the analysis record with the error status
@@ -239,6 +254,11 @@ const Upload = () => {
               <AlertCircle size={18} />
               <h3 className="font-medium">Error processing video</h3>
             </div>
+            {errorDetails && (
+              <p className="text-sm text-destructive mb-2 p-2 bg-destructive/10 rounded-md">
+                {errorDetails}
+              </p>
+            )}
             <p className="text-sm text-muted-foreground mb-4">
               There was a problem analyzing your video. Please try again.
             </p>
