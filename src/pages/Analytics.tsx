@@ -44,20 +44,48 @@ interface AnalysisData {
   transcriptId?: string;
 }
 
+// Type guard to check if value is a non-null object
 const isObject = (value: unknown): value is Record<string, unknown> => {
   return typeof value === 'object' && value !== null;
 };
 
+// Type guard to check if a value is a metrics object
+const isMetricsObject = (obj: unknown): obj is AnalysisData['metrics'] => {
+  if (!isObject(obj)) return false;
+  
+  const requiredKeys = ['overall', 'eyeContact', 'confidence', 'bodyLanguage', 'speaking', 'engagement'];
+  return requiredKeys.every(key => typeof obj[key] === 'number' || obj[key] === undefined);
+};
+
+// Type guard to check if a value is a feedback item
+const isFeedbackItem = (obj: unknown): obj is AnalysisData['feedback'][0] => {
+  if (!isObject(obj)) return false;
+  return typeof obj.type === 'string' && typeof obj.text === 'string';
+};
+
+// Type guard to check if a value is a timeline insight
+const isTimelineInsight = (obj: unknown): obj is AnalysisData['timelineInsights'][0] => {
+  if (!isObject(obj)) return false;
+  return typeof obj.timepoint === 'string' && typeof obj.insight === 'string';
+};
+
+// Type guard to validate overall analysis JSON structure
 const isValidAnalysisJson = (data: Json): boolean => {
   if (!isObject(data)) return false;
   
-  return (
-    isObject(data.metrics) &&
-    Array.isArray(data.feedback) &&
-    Array.isArray(data.timelineInsights)
-  );
+  // Check if metrics exists and is an object
+  const hasMetrics = isObject(data.metrics);
+  
+  // Check if feedback exists and is an array
+  const hasFeedback = Array.isArray(data.feedback);
+  
+  // Check if timelineInsights exists and is an array
+  const hasTimelineInsights = Array.isArray(data.timelineInsights);
+  
+  return hasMetrics && hasFeedback && hasTimelineInsights;
 };
 
+// Helper function to extract metrics with proper type checking
 const extractAnalysisData = (analysisJson: Json | null): AnalysisData['metrics'] => {
   if (!analysisJson || !isValidAnalysisJson(analysisJson)) {
     return {
@@ -70,47 +98,81 @@ const extractAnalysisData = (analysisJson: Json | null): AnalysisData['metrics']
     };
   }
   
-  const metrics = analysisJson.metrics as Record<string, number>;
+  const metricsObj = analysisJson.metrics;
   
+  if (!isObject(metricsObj)) {
+    return {
+      overall: 0,
+      eyeContact: 0,
+      confidence: 0,
+      bodyLanguage: 0,
+      speaking: 0,
+      engagement: 0
+    };
+  }
+  
+  // Safe extraction of metrics with fallbacks
   return {
-    overall: metrics.overall || 0,
-    eyeContact: metrics.eyeContact || 0,
-    confidence: metrics.confidence || 0,
-    bodyLanguage: metrics.bodyLanguage || 0,
-    speaking: metrics.speaking || 0,
-    engagement: metrics.engagement || 0
+    overall: typeof metricsObj.overall === 'number' ? metricsObj.overall : 0,
+    eyeContact: typeof metricsObj.eyeContact === 'number' ? metricsObj.eyeContact : 0,
+    confidence: typeof metricsObj.confidence === 'number' ? metricsObj.confidence : 0,
+    bodyLanguage: typeof metricsObj.bodyLanguage === 'number' ? metricsObj.bodyLanguage : 0,
+    speaking: typeof metricsObj.speaking === 'number' ? metricsObj.speaking : 0,
+    engagement: typeof metricsObj.engagement === 'number' ? metricsObj.engagement : 0
   };
 };
 
+// Helper function to extract feedback with proper type checking
 const extractFeedback = (analysisJson: Json | null): AnalysisData['feedback'] => {
   if (!analysisJson || !isValidAnalysisJson(analysisJson)) {
     return [];
   }
   
-  const feedback = analysisJson.feedback as Array<{type: string, text: string}>;
-  return feedback || [];
+  const feedbackArray = analysisJson.feedback;
+  
+  if (!Array.isArray(feedbackArray)) {
+    return [];
+  }
+  
+  // Filter to ensure only valid feedback items are included
+  return feedbackArray.filter(isFeedbackItem);
 };
 
+// Helper function to extract timeline insights with proper type checking
 const extractTimelineInsights = (analysisJson: Json | null): AnalysisData['timelineInsights'] => {
   if (!analysisJson || !isValidAnalysisJson(analysisJson)) {
     return [];
   }
   
-  const insights = analysisJson.timelineInsights as Array<{timepoint: string, insight: string}>;
-  return insights || [];
+  const insightsArray = analysisJson.timelineInsights;
+  
+  if (!Array.isArray(insightsArray)) {
+    return [];
+  }
+  
+  // Filter to ensure only valid timeline insights are included
+  return insightsArray.filter(isTimelineInsight);
 };
 
+// Helper function to extract speech metrics with proper type checking
 const extractSpeechMetrics = (analysisJson: Json | null): AnalysisData['speechMetrics'] | undefined => {
   if (!analysisJson || !isValidAnalysisJson(analysisJson) || !isObject(analysisJson.speechMetrics)) {
     return undefined;
   }
   
-  const metrics = analysisJson.speechMetrics as Record<string, any>;
+  const metrics = analysisJson.speechMetrics as Record<string, unknown>;
+  
+  // Check if required fields exist and have correct types
+  if (typeof metrics.wordsPerMinute !== 'number' || 
+      typeof metrics.fillerWordRate !== 'string' || 
+      typeof metrics.duration !== 'string') {
+    return undefined;
+  }
   
   return {
-    wordsPerMinute: metrics.wordsPerMinute || 0,
-    fillerWordRate: metrics.fillerWordRate || "0%",
-    duration: metrics.duration || "0:00"
+    wordsPerMinute: metrics.wordsPerMinute,
+    fillerWordRate: metrics.fillerWordRate,
+    duration: metrics.duration
   };
 };
 
@@ -158,6 +220,11 @@ const Analytics = () => {
           setVideoUrl(urlData.signedUrl);
         }
         
+        let transcriptId: string | undefined = undefined;
+        if (isObject(analysisRecord.analysis) && typeof analysisRecord.analysis.transcriptId === 'string') {
+          transcriptId = analysisRecord.analysis.transcriptId;
+        }
+        
         const formattedData: AnalysisData = {
           id: analysisRecord.id,
           title: "Video Analysis",
@@ -166,8 +233,7 @@ const Analytics = () => {
           feedback: extractFeedback(analysisRecord.analysis),
           timelineInsights: extractTimelineInsights(analysisRecord.analysis),
           speechMetrics: extractSpeechMetrics(analysisRecord.analysis),
-          transcriptId: isObject(analysisRecord.analysis) ? 
-            (analysisRecord.analysis.transcriptId as string) : undefined
+          transcriptId: transcriptId
         };
         
         setAnalysisData(formattedData);
