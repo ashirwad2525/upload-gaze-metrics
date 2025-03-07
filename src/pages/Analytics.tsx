@@ -44,50 +44,40 @@ interface AnalysisData {
   transcriptId?: string;
 }
 
-// Type guard to check if value is a non-null object
 const isObject = (value: unknown): value is Record<string, unknown> => {
   return typeof value === 'object' && value !== null;
 };
 
-// Type guard to check if a value is a metrics object
-const isMetricsObject = (obj: unknown): obj is AnalysisData['metrics'] => {
-  if (!isObject(obj)) return false;
-  
-  const requiredKeys = ['overall', 'eyeContact', 'confidence', 'bodyLanguage', 'speaking', 'engagement'];
-  return requiredKeys.every(key => typeof obj[key] === 'number' || obj[key] === undefined);
-};
-
-// Type guard to check if a value is a feedback item
-const isFeedbackItem = (obj: unknown): obj is AnalysisData['feedback'][0] => {
-  if (!isObject(obj)) return false;
-  return typeof obj.type === 'string' && typeof obj.text === 'string';
-};
-
-// Type guard to check if a value is a timeline insight
-const isTimelineInsight = (obj: unknown): obj is AnalysisData['timelineInsights'][0] => {
-  if (!isObject(obj)) return false;
-  return typeof obj.timepoint === 'string' && typeof obj.insight === 'string';
-};
-
-// Type guard to validate overall analysis JSON structure
-const isValidAnalysisJson = (data: Json): boolean => {
+const isValidAnalysisJson = (data: unknown): boolean => {
   if (!isObject(data)) return false;
   
-  // Check if metrics exists and is an object
-  const hasMetrics = isObject(data.metrics);
+  const hasMetrics = isObject(data.metrics) && 
+    typeof data.metrics.overall === 'number' &&
+    typeof data.metrics.eyeContact === 'number' &&
+    typeof data.metrics.confidence === 'number' &&
+    typeof data.metrics.bodyLanguage === 'number' &&
+    typeof data.metrics.speaking === 'number' &&
+    typeof data.metrics.engagement === 'number';
   
-  // Check if feedback exists and is an array
-  const hasFeedback = Array.isArray(data.feedback);
+  const hasFeedback = Array.isArray(data.feedback) && 
+    data.feedback.every(item => 
+      isObject(item) && 
+      typeof item.type === 'string' && 
+      typeof item.text === 'string'
+    );
   
-  // Check if timelineInsights exists and is an array
-  const hasTimelineInsights = Array.isArray(data.timelineInsights);
+  const hasTimelineInsights = Array.isArray(data.timelineInsights) && 
+    data.timelineInsights.every(item => 
+      isObject(item) && 
+      typeof item.timepoint === 'string' && 
+      typeof item.insight === 'string'
+    );
   
   return hasMetrics && hasFeedback && hasTimelineInsights;
 };
 
-// Helper function to extract metrics with proper type checking
-const extractAnalysisData = (analysisJson: Json | null): AnalysisData['metrics'] => {
-  if (!analysisJson || !isValidAnalysisJson(analysisJson)) {
+const extractMetrics = (analysisJson: unknown): AnalysisData['metrics'] => {
+  if (!isObject(analysisJson) || !isObject(analysisJson.metrics)) {
     return {
       overall: 0,
       eyeContact: 0,
@@ -98,71 +88,51 @@ const extractAnalysisData = (analysisJson: Json | null): AnalysisData['metrics']
     };
   }
   
-  const metricsObj = analysisJson.metrics;
+  const metrics = analysisJson.metrics;
   
-  if (!isObject(metricsObj)) {
-    return {
-      overall: 0,
-      eyeContact: 0,
-      confidence: 0,
-      bodyLanguage: 0,
-      speaking: 0,
-      engagement: 0
-    };
-  }
-  
-  // Safe extraction of metrics with fallbacks
   return {
-    overall: typeof metricsObj.overall === 'number' ? metricsObj.overall : 0,
-    eyeContact: typeof metricsObj.eyeContact === 'number' ? metricsObj.eyeContact : 0,
-    confidence: typeof metricsObj.confidence === 'number' ? metricsObj.confidence : 0,
-    bodyLanguage: typeof metricsObj.bodyLanguage === 'number' ? metricsObj.bodyLanguage : 0,
-    speaking: typeof metricsObj.speaking === 'number' ? metricsObj.speaking : 0,
-    engagement: typeof metricsObj.engagement === 'number' ? metricsObj.engagement : 0
+    overall: typeof metrics.overall === 'number' ? metrics.overall : 0,
+    eyeContact: typeof metrics.eyeContact === 'number' ? metrics.eyeContact : 0,
+    confidence: typeof metrics.confidence === 'number' ? metrics.confidence : 0,
+    bodyLanguage: typeof metrics.bodyLanguage === 'number' ? metrics.bodyLanguage : 0,
+    speaking: typeof metrics.speaking === 'number' ? metrics.speaking : 0,
+    engagement: typeof metrics.engagement === 'number' ? metrics.engagement : 0
   };
 };
 
-// Helper function to extract feedback with proper type checking
-const extractFeedback = (analysisJson: Json | null): AnalysisData['feedback'] => {
-  if (!analysisJson || !isValidAnalysisJson(analysisJson)) {
+const extractFeedback = (analysisJson: unknown): AnalysisData['feedback'] => {
+  if (!isObject(analysisJson) || !Array.isArray(analysisJson.feedback)) {
     return [];
   }
   
-  const feedbackArray = analysisJson.feedback;
-  
-  if (!Array.isArray(feedbackArray)) {
-    return [];
-  }
-  
-  // Filter to ensure only valid feedback items are included
-  return feedbackArray.filter(isFeedbackItem);
+  return analysisJson.feedback
+    .filter(item => isObject(item) && typeof item.type === 'string' && typeof item.text === 'string')
+    .map(item => ({
+      type: item.type as string,
+      text: item.text as string
+    }));
 };
 
-// Helper function to extract timeline insights with proper type checking
-const extractTimelineInsights = (analysisJson: Json | null): AnalysisData['timelineInsights'] => {
-  if (!analysisJson || !isValidAnalysisJson(analysisJson)) {
+const extractTimelineInsights = (analysisJson: unknown): AnalysisData['timelineInsights'] => {
+  if (!isObject(analysisJson) || !Array.isArray(analysisJson.timelineInsights)) {
     return [];
   }
   
-  const insightsArray = analysisJson.timelineInsights;
-  
-  if (!Array.isArray(insightsArray)) {
-    return [];
-  }
-  
-  // Filter to ensure only valid timeline insights are included
-  return insightsArray.filter(isTimelineInsight);
+  return analysisJson.timelineInsights
+    .filter(item => isObject(item) && typeof item.timepoint === 'string' && typeof item.insight === 'string')
+    .map(item => ({
+      timepoint: item.timepoint as string,
+      insight: item.insight as string
+    }));
 };
 
-// Helper function to extract speech metrics with proper type checking
-const extractSpeechMetrics = (analysisJson: Json | null): AnalysisData['speechMetrics'] | undefined => {
-  if (!analysisJson || !isValidAnalysisJson(analysisJson) || !isObject(analysisJson.speechMetrics)) {
+const extractSpeechMetrics = (analysisJson: unknown): AnalysisData['speechMetrics'] | undefined => {
+  if (!isObject(analysisJson) || !isObject(analysisJson.speechMetrics)) {
     return undefined;
   }
   
-  const metrics = analysisJson.speechMetrics as Record<string, unknown>;
+  const metrics = analysisJson.speechMetrics;
   
-  // Check if required fields exist and have correct types
   if (typeof metrics.wordsPerMinute !== 'number' || 
       typeof metrics.fillerWordRate !== 'string' || 
       typeof metrics.duration !== 'string') {
@@ -170,10 +140,18 @@ const extractSpeechMetrics = (analysisJson: Json | null): AnalysisData['speechMe
   }
   
   return {
-    wordsPerMinute: metrics.wordsPerMinute,
-    fillerWordRate: metrics.fillerWordRate,
-    duration: metrics.duration
+    wordsPerMinute: metrics.wordsPerMinute as number,
+    fillerWordRate: metrics.fillerWordRate as string,
+    duration: metrics.duration as string
   };
+};
+
+const extractTranscriptId = (analysisJson: unknown): string | undefined => {
+  if (!isObject(analysisJson)) {
+    return undefined;
+  }
+  
+  return typeof analysisJson.transcriptId === 'string' ? analysisJson.transcriptId : undefined;
 };
 
 const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884D8', '#82ca9d'];
@@ -196,6 +174,8 @@ const Analytics = () => {
           throw new Error("Missing analysis ID or user is not logged in");
         }
         
+        console.log("Fetching analysis for ID:", id);
+        
         const { data: analysisRecord, error: fetchError } = await supabase
           .from('video_analyses')
           .select('*')
@@ -212,30 +192,32 @@ const Analytics = () => {
           throw new Error("Analysis not found");
         }
         
+        console.log("Found analysis record:", analysisRecord.id);
+        
         const { data: urlData } = await supabase.storage
           .from('videos')
           .createSignedUrl(analysisRecord.video_path, 3600); // 1 hour expiry
         
         if (urlData?.signedUrl) {
           setVideoUrl(urlData.signedUrl);
+          console.log("Video URL created");
         }
         
-        let transcriptId: string | undefined = undefined;
-        if (isObject(analysisRecord.analysis) && typeof analysisRecord.analysis.transcriptId === 'string') {
-          transcriptId = analysisRecord.analysis.transcriptId;
-        }
+        const analysisJson = analysisRecord.analysis;
+        console.log("Analysis data:", analysisJson);
         
         const formattedData: AnalysisData = {
           id: analysisRecord.id,
           title: "Video Analysis",
           date: new Date(analysisRecord.created_at).toLocaleDateString(),
-          metrics: extractAnalysisData(analysisRecord.analysis),
-          feedback: extractFeedback(analysisRecord.analysis),
-          timelineInsights: extractTimelineInsights(analysisRecord.analysis),
-          speechMetrics: extractSpeechMetrics(analysisRecord.analysis),
-          transcriptId: transcriptId
+          metrics: extractMetrics(analysisJson),
+          feedback: extractFeedback(analysisJson),
+          timelineInsights: extractTimelineInsights(analysisJson),
+          speechMetrics: extractSpeechMetrics(analysisJson),
+          transcriptId: extractTranscriptId(analysisJson)
         };
         
+        console.log("Formatted data:", formattedData);
         setAnalysisData(formattedData);
         setLoading(false);
       } catch (err) {
