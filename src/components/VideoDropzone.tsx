@@ -38,6 +38,8 @@ const VideoDropzone = ({ onVideoSelect, className }: VideoDropzoneProps) => {
   };
 
   const handleFileSelect = (file: File) => {
+    console.log("File selected:", file.name, file.type, file.size);
+    
     // Validate file type
     if (!file.type.startsWith("video/")) {
       toast.error("Please select a valid video file");

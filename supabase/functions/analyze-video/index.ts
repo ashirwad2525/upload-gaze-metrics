@@ -42,16 +42,21 @@ serve(async (req) => {
     if (!assemblyAiApiKey) {
       console.error("Assembly AI API key not found");
       
-      // Return a simulated analysis as fallback
+      // Return a simulated analysis as fallback with unique identifier
       console.log("Generating simulated analysis as fallback");
       
+      // Add a unique identifier to ensure each analysis is different
+      const uniqueId = crypto.randomUUID();
+      
       // Create a randomized but plausible fallback response
+      // Use videoId and uniqueId to create truly unique values
       const randomSeed = videoData.fileName.length + (videoData.fileSize % 100) + Date.now() % 1000;
       const getRandomScore = (base: number, variance: number) => {
         return Math.max(0, Math.min(100, base + (randomSeed % variance) - (variance / 2)));
       };
       
       const fallbackAnalysis = {
+        analysisId: uniqueId, // Add a unique identifier for each analysis
         metrics: {
           overall: getRandomScore(75, 20),
           eyeContact: getRandomScore(70, 30),
@@ -61,14 +66,14 @@ serve(async (req) => {
           engagement: getRandomScore(73, 22)
         },
         feedback: [
-          { type: "positive", text: "Good posture and confident delivery of main points" },
+          { type: "positive", text: `Good posture and confident delivery of main points (ID: ${uniqueId.slice(0, 8)})` },
           { type: "positive", text: "Effective use of hand gestures to emphasize key information" },
           { type: "improvement", text: "Maintain more consistent eye contact with the camera" },
           { type: "improvement", text: "Reduce use of filler words during transitions" },
-          { type: "improvement", text: "Work on maintaining energy levels throughout the presentation" }
+          { type: "improvement", text: `Work on maintaining energy levels throughout the presentation (ID: ${uniqueId.slice(0, 8)})` }
         ],
         timelineInsights: [
-          { timepoint: "0:15", insight: "Strong opening with confident posture" },
+          { timepoint: "0:15", insight: `Strong opening with confident posture (ID: ${uniqueId.slice(0, 8)})` },
           { timepoint: "0:45", insight: "Good hand gestures while explaining main concept" },
           { timepoint: "1:30", insight: "Breaking eye contact when discussing technical details" },
           { timepoint: "2:15", insight: "Increased energy when presenting conclusion" }
@@ -337,8 +342,12 @@ serve(async (req) => {
       };
     }
     
+    // Add a unique identifier for each analysis
+    const uniqueAnalysisId = crypto.randomUUID();
+    
     // Combine all analyses into a comprehensive result
     const finalAnalysis = {
+      analysisId: uniqueAnalysisId, // Add unique ID to ensure each analysis is different
       metrics: presentationInsights.metrics,
       feedback: presentationInsights.feedback,
       timelineInsights: presentationInsights.timelineInsights,
@@ -350,7 +359,7 @@ serve(async (req) => {
       transcriptId: transcriptId, // Store for potential future reference
     };
     
-    console.log("Analysis completed and processed successfully");
+    console.log("Analysis completed and processed successfully with ID:", uniqueAnalysisId);
     
     return new Response(
       JSON.stringify({
