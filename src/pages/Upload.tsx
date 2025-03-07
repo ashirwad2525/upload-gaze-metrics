@@ -1,4 +1,3 @@
-
 import React, { useState } from "react";
 import Layout from "@/components/Layout";
 import VideoDropzone from "@/components/VideoDropzone";
@@ -30,7 +29,6 @@ const Upload = () => {
 
   const handleVideoSelect = (file: File) => {
     setSelectedVideo(file);
-    // Reset any previous error states
     setErrorDetails(null);
     if (uploadStatus === UploadStatus.ERROR) {
       setUploadStatus(UploadStatus.IDLE);
@@ -53,24 +51,25 @@ const Upload = () => {
     setErrorDetails(null);
 
     try {
-      // Create a unique file path for the user's video
       const videoId = crypto.randomUUID();
       
-      // Sanitize the filename to avoid special character issues
       const sanitizedFileName = selectedVideo.name
-        .replace(/[^a-zA-Z0-9.-]/g, '_') // Replace special chars with underscore
-        .replace(/\s+/g, '_'); // Replace spaces with underscore
+        .replace(/[^a-zA-Z0-9.-]/g, '_')
+        .replace(/\s+/g, '_');
       
-      const filePath = `videos/${user.id}/${videoId}/${sanitizedFileName}`;
+      const filePath = `${user.id}/${videoId}/${sanitizedFileName}`;
 
       console.log("Attempting to upload video to path:", filePath);
 
-      // Upload the video to Supabase Storage
       const { error: uploadError, data } = await supabase.storage
         .from('videos')
         .upload(filePath, selectedVideo, {
           cacheControl: '3600',
           upsert: false,
+          onUploadProgress: (progress) => {
+            const calculatedProgress = (progress.loaded / progress.total) * 100;
+            setUploadProgress(Math.floor(calculatedProgress));
+          }
         });
 
       if (uploadError) {
@@ -80,7 +79,6 @@ const Upload = () => {
 
       console.log("Video uploaded successfully:", data);
 
-      // Create initial video analysis record
       const { error: insertError, data: analysisRecord } = await supabase
         .from('video_analyses')
         .insert({
@@ -96,7 +94,6 @@ const Upload = () => {
         throw new Error(`Error creating analysis record: ${insertError.message}`);
       }
 
-      // After successful upload, move to processing
       setUploadProgress(100);
       setUploadStatus(UploadStatus.PROCESSING);
       processVideo(filePath, analysisRecord.id);
@@ -111,11 +108,10 @@ const Upload = () => {
   const processVideo = async (videoPath: string, videoAnalysisId: string) => {
     setProcessingProgress(0);
     
-    // Simulate processing progress
     const processingInterval = setInterval(() => {
       setProcessingProgress(prev => {
         const newProgress = prev + 2;
-        if (newProgress >= 95) { // Only go to 95% automatically, save 100% for actual completion
+        if (newProgress >= 95) {
           clearInterval(processingInterval);
           return 95;
         }
@@ -126,7 +122,6 @@ const Upload = () => {
     try {
       console.log("Processing video analysis with ID:", videoAnalysisId);
       
-      // Call our edge function to analyze the video
       const { data, error } = await supabase.functions.invoke('analyze-video', {
         body: {
           videoData: {
@@ -139,23 +134,19 @@ const Upload = () => {
         }
       });
 
-      // Check for edge function error
       if (error) {
         console.error("Edge function error:", error);
         throw new Error(error.message || "Failed to analyze video");
       }
 
-      // Check if the response indicates an error
       if (!data?.success) {
         console.error("Analysis failed with data:", data);
         throw new Error(data?.error || "Analysis failed");
       }
 
-      // After processing completes
       clearInterval(processingInterval);
       setProcessingProgress(100);
       
-      // Update the analysis record with the results
       const { error: updateError } = await supabase
         .from('video_analyses')
         .update({
@@ -180,7 +171,6 @@ const Upload = () => {
       setErrorDetails(error instanceof Error ? error.message : "Failed to analyze video");
       toast.error(error instanceof Error ? error.message : "Failed to analyze video");
       
-      // Update the analysis record with the error status
       if (videoAnalysisId) {
         await supabase
           .from('video_analyses')
