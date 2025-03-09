@@ -3,7 +3,7 @@ import Layout from "@/components/Layout";
 import VideoDropzone from "@/components/VideoDropzone";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
-import { CheckCircle, Loader2, FileText, AlertCircle } from "lucide-react";
+import { CheckCircle, Loader2, FileText, AlertCircle, XCircle } from "lucide-react";
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
@@ -18,6 +18,12 @@ enum UploadStatus {
   ERROR,
 }
 
+interface ProcessingStep {
+  step: string;
+  status: "pending" | "processing" | "success" | "failed";
+  message: string;
+}
+
 const Upload = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -27,6 +33,14 @@ const Upload = () => {
   const [processingProgress, setProcessingProgress] = useState(0);
   const [analysisId, setAnalysisId] = useState<string | null>(null);
   const [errorDetails, setErrorDetails] = useState<string | null>(null);
+  const [processingSteps, setProcessingSteps] = useState<ProcessingStep[]>([
+    { step: "initialization", status: "pending", message: "Preparing analysis..." },
+    { step: "humanDetection", status: "pending", message: "Human detection check..." },
+    { step: "facialFeatures", status: "pending", message: "Facial feature verification..." },
+    { step: "bodyPosture", status: "pending", message: "Body posture tracking..." },
+    { step: "speechAnalysis", status: "pending", message: "Speech analysis..." },
+    { step: "reportGeneration", status: "pending", message: "Generating final report..." }
+  ]);
 
   const handleVideoSelect = (file: File) => {
     setSelectedVideo(file);
@@ -34,6 +48,15 @@ const Upload = () => {
     if (uploadStatus === UploadStatus.ERROR) {
       setUploadStatus(UploadStatus.IDLE);
     }
+    
+    setProcessingSteps([
+      { step: "initialization", status: "pending", message: "Preparing analysis..." },
+      { step: "humanDetection", status: "pending", message: "Human detection check..." },
+      { step: "facialFeatures", status: "pending", message: "Facial feature verification..." },
+      { step: "bodyPosture", status: "pending", message: "Body posture tracking..." },
+      { step: "speechAnalysis", status: "pending", message: "Speech analysis..." },
+      { step: "reportGeneration", status: "pending", message: "Generating final report..." }
+    ]);
   };
 
   const handleUpload = async () => {
@@ -50,6 +73,10 @@ const Upload = () => {
     setUploadStatus(UploadStatus.UPLOADING);
     setUploadProgress(0);
     setErrorDetails(null);
+    
+    const updatedSteps = [...processingSteps];
+    updatedSteps[0] = { ...updatedSteps[0], status: "processing" };
+    setProcessingSteps(updatedSteps);
 
     try {
       const videoId = crypto.randomUUID();
@@ -93,28 +120,34 @@ const Upload = () => {
 
       setUploadProgress(100);
       setUploadStatus(UploadStatus.PROCESSING);
+      
+      const stepUpdate = [...processingSteps];
+      stepUpdate[0] = { ...stepUpdate[0], status: "success" };
+      stepUpdate[1] = { ...stepUpdate[1], status: "processing" };
+      setProcessingSteps(stepUpdate);
+      
       processVideo(filePath, analysisRecord.id);
     } catch (error) {
       console.error("Upload error:", error);
       setUploadStatus(UploadStatus.ERROR);
       setErrorDetails(error instanceof Error ? error.message : "Failed to upload video");
       toast.error(error instanceof Error ? error.message : "Failed to upload video");
+      
+      const currentStepIndex = processingSteps.findIndex(step => step.status === "processing");
+      if (currentStepIndex >= 0) {
+        const stepUpdate = [...processingSteps];
+        stepUpdate[currentStepIndex] = { 
+          ...stepUpdate[currentStepIndex], 
+          status: "failed",
+          message: `Failed: ${error instanceof Error ? error.message : "Unknown error"}` 
+        };
+        setProcessingSteps(stepUpdate);
+      }
     }
   };
 
   const processVideo = async (videoPath: string, videoAnalysisId: string) => {
-    setProcessingProgress(0);
-    
-    const processingInterval = setInterval(() => {
-      setProcessingProgress(prev => {
-        const newProgress = prev + 2;
-        if (newProgress >= 95) {
-          clearInterval(processingInterval);
-          return 95;
-        }
-        return newProgress;
-      });
-    }, 300);
+    setProcessingProgress(10);
     
     try {
       console.log("Processing video analysis with ID:", videoAnalysisId);
@@ -138,10 +171,26 @@ const Upload = () => {
 
       if (!data?.success) {
         console.error("Analysis failed with data:", data);
+        
+        if (data?.processingSteps) {
+          updateProcessingStepsFromResponse(data.processingSteps);
+        } else if (data?.processingStep) {
+          markStepAsFailed(data.processingStep, data.error || "Analysis failed");
+        }
+        
         throw new Error(data?.error || "Analysis failed");
       }
 
-      clearInterval(processingInterval);
+      if (data.processingSteps) {
+        updateProcessingStepsFromResponse(data.processingSteps);
+      } else {
+        const allSuccess = processingSteps.map(step => ({
+          ...step,
+          status: "success" as const
+        }));
+        setProcessingSteps(allSuccess);
+      }
+      
       setProcessingProgress(100);
       
       const { error: updateError } = await supabase
@@ -163,7 +212,6 @@ const Upload = () => {
       toast.success("Video analysis complete!");
     } catch (error) {
       console.error("Processing error:", error);
-      clearInterval(processingInterval);
       setUploadStatus(UploadStatus.ERROR);
       setErrorDetails(error instanceof Error ? error.message : "Failed to analyze video");
       toast.error(error instanceof Error ? error.message : "Failed to analyze video");
@@ -177,6 +225,88 @@ const Upload = () => {
           .eq('id', videoAnalysisId);
       }
     }
+  };
+
+  const updateProcessingStepsFromResponse = (apiSteps: any[]) => {
+    const updatedSteps = [...processingSteps];
+    
+    apiSteps.forEach(apiStep => {
+      const stepIndex = updatedSteps.findIndex(s => s.step === apiStep.step);
+      if (stepIndex >= 0) {
+        updatedSteps[stepIndex] = {
+          ...updatedSteps[stepIndex],
+          status: apiStep.status as any,
+          message: apiStep.message || updatedSteps[stepIndex].message
+        };
+      }
+    });
+    
+    setProcessingSteps(updatedSteps);
+    
+    const completedSteps = updatedSteps.filter(s => s.status === "success").length;
+    const totalSteps = updatedSteps.length;
+    const progress = Math.min(95, Math.round((completedSteps / totalSteps) * 100));
+    setProcessingProgress(progress);
+  };
+
+  const markStepAsFailed = (stepName: string, errorMessage: string) => {
+    const updatedSteps = [...processingSteps];
+    const stepIndex = updatedSteps.findIndex(s => s.step === stepName);
+    
+    if (stepIndex >= 0) {
+      for (let i = 0; i < stepIndex; i++) {
+        updatedSteps[i] = { 
+          ...updatedSteps[i], 
+          status: "success" 
+        };
+      }
+      
+      updatedSteps[stepIndex] = { 
+        ...updatedSteps[stepIndex], 
+        status: "failed",
+        message: `Failed: ${errorMessage}` 
+      };
+      
+      setProcessingSteps(updatedSteps);
+    }
+  };
+
+  const renderProcessingStep = (step: ProcessingStep, index: number) => {
+    const getIcon = () => {
+      switch (step.status) {
+        case 'success':
+          return <CheckCircle className="text-green-500" size={16} />;
+        case 'failed':
+          return <XCircle className="text-destructive" size={16} />;
+        case 'processing':
+          return <Loader2 className="animate-spin text-primary" size={16} />;
+        default:
+          return <div className="w-4 h-4 rounded-full border border-border" />;
+      }
+    };
+    
+    return (
+      <div 
+        key={step.step} 
+        className={`
+          flex items-start gap-2 py-1.5
+          ${step.status === 'pending' ? 'text-muted-foreground' : 'text-foreground'}
+          ${step.status === 'failed' ? 'text-destructive' : ''}
+        `}
+      >
+        {getIcon()}
+        <div>
+          <p className="text-sm font-medium">{step.message}</p>
+          {step.status === 'failed' && (
+            <p className="text-xs text-destructive mt-0.5">
+              {step.message.includes('Failed:') 
+                ? step.message 
+                : `Failed: ${step.message}`}
+            </p>
+          )}
+        </div>
+      </div>
+    );
   };
 
   const renderUploadStatus = () => {
@@ -204,11 +334,11 @@ const Upload = () => {
             </div>
             <Progress 
               value={processingProgress} 
-              className="h-2 mb-1"
+              className="h-2 mb-3"
             />
-            <p className="text-sm text-muted-foreground">
-              Analyzing body language, eye contact, and confidence metrics
-            </p>
+            <div className="border rounded-md p-3 bg-muted/30 space-y-1">
+              {processingSteps.map(renderProcessingStep)}
+            </div>
           </div>
         );
       case UploadStatus.COMPLETE:
@@ -231,19 +361,29 @@ const Upload = () => {
           </div>
         );
       case UploadStatus.ERROR:
+        const failedStep = processingSteps.find(step => step.status === "failed");
+        
         return (
           <div className="animate-fade-in">
             <div className="flex items-center gap-2 mb-2 text-destructive">
               <AlertCircle size={18} />
               <h3 className="font-medium">Error processing video</h3>
             </div>
-            {errorDetails && (
+            
+            {failedStep && (
+              <div className="border border-destructive/20 rounded-md p-3 bg-destructive/5 mb-3">
+                {processingSteps.map(renderProcessingStep)}
+              </div>
+            )}
+            
+            {errorDetails && !failedStep && (
               <p className="text-sm text-destructive mb-2 p-2 bg-destructive/10 rounded-md">
                 {errorDetails}
               </p>
             )}
+            
             <p className="text-sm text-muted-foreground mb-4">
-              {errorDetails?.includes("No human detected") || errorDetails?.includes("facial visibility") 
+              {errorDetails?.includes("No human detected") || errorDetails?.includes("facial visibility") || errorDetails?.includes("body visibility")
                 ? "Please upload a different video with clear human presence and facial visibility."
                 : "There was a problem analyzing your video. Please try again."}
             </p>
