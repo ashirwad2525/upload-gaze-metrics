@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
+import { Progress } from "@/components/ui/progress";
 
 enum UploadStatus {
   IDLE,
@@ -65,11 +66,7 @@ const Upload = () => {
         .from('videos')
         .upload(filePath, selectedVideo, {
           cacheControl: '3600',
-          upsert: false,
-          onUploadProgress: (progress) => {
-            const calculatedProgress = (progress.loaded / progress.total) * 100;
-            setUploadProgress(Math.floor(calculatedProgress));
-          }
+          upsert: false
         });
 
       if (uploadError) {
@@ -191,12 +188,10 @@ const Upload = () => {
               <Loader2 className="animate-spin text-primary" size={18} />
               <h3 className="font-medium">Uploading video...</h3>
             </div>
-            <div className="h-2 w-full bg-secondary rounded-full overflow-hidden mb-1">
-              <div
-                className="h-full bg-primary transition-all duration-300"
-                style={{ width: `${uploadProgress}%` }}
-              ></div>
-            </div>
+            <Progress 
+              value={uploadProgress} 
+              className="h-2 mb-1" 
+            />
             <p className="text-sm text-muted-foreground">{uploadProgress}% complete</p>
           </div>
         );
@@ -207,12 +202,10 @@ const Upload = () => {
               <Loader2 className="animate-spin text-primary" size={18} />
               <h3 className="font-medium">Processing video...</h3>
             </div>
-            <div className="h-2 w-full bg-secondary rounded-full overflow-hidden mb-1">
-              <div
-                className="h-full bg-primary transition-all duration-300"
-                style={{ width: `${processingProgress}%` }}
-              ></div>
-            </div>
+            <Progress 
+              value={processingProgress} 
+              className="h-2 mb-1"
+            />
             <p className="text-sm text-muted-foreground">
               Analyzing body language, eye contact, and confidence metrics
             </p>
@@ -250,7 +243,9 @@ const Upload = () => {
               </p>
             )}
             <p className="text-sm text-muted-foreground mb-4">
-              There was a problem analyzing your video. Please try again.
+              {errorDetails?.includes("No human detected") || errorDetails?.includes("facial visibility") 
+                ? "Please upload a different video with clear human presence and facial visibility."
+                : "There was a problem analyzing your video. Please try again."}
             </p>
             <Button variant="outline" onClick={() => setUploadStatus(UploadStatus.IDLE)}>
               Try Again

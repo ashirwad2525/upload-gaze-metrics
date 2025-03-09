@@ -7,6 +7,12 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// Configuration for deterministic analysis
+const ANALYSIS_VERSION = '1.0.0';
+
+// Used to store video fingerprints for consistent analysis
+const videoFingerprints = new Map();
+
 serve(async (req) => {
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
@@ -27,61 +33,65 @@ serve(async (req) => {
       );
     }
 
-    // Check for Assembly AI API key
-    const assemblyAiApiKey = Deno.env.get('ASSEMBLY_AI_API_KEY');
+    // Generate a consistent video fingerprint based on file properties
+    // In a real implementation, this would be based on actual video content analysis
+    const videoFingerprint = `${videoData.fileName}-${videoData.fileSize}`;
     
-    // Since we're consistently having issues with the video URL/analysis process,
-    // let's use the simulated analysis approach for now to make the app functional
-    console.log("Generating analysis for video:", videoData.fileName);
+    // Check if we've analyzed this video before (for consistency)
+    if (videoFingerprints.has(videoFingerprint)) {
+      console.log("Using cached analysis for video:", videoFingerprint);
+      return new Response(
+        JSON.stringify({
+          success: true,
+          analysis: videoFingerprints.get(videoFingerprint)
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // Simulate human detection analysis in the video
+    // In a real implementation, this would use a computer vision model
+    const hasHuman = simulateHumanDetection(videoData);
     
-    // Add a unique identifier to ensure each analysis is different
-    const uniqueId = crypto.randomUUID();
+    if (!hasHuman) {
+      console.log("No human detected in video:", videoData.fileName);
+      return new Response(
+        JSON.stringify({ 
+          error: "No human detected. Please upload a valid video for analysis.", 
+          success: false 
+        }),
+        { status: 422, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // Simulate facial feature detection
+    // In a real implementation, this would use facial detection models
+    const hasFacialFeatures = simulateFacialFeatureDetection(videoData);
     
-    // Create a randomized but plausible response
-    // Use videoData attributes and uniqueId to create truly unique values
-    const randomSeed = videoData.fileName.length + (videoData.fileSize % 100) + Date.now() % 1000;
-    const getRandomScore = (base: number, variance: number) => {
-      return Math.max(0, Math.min(100, base + (randomSeed % variance) - (variance / 2)));
-    };
+    if (!hasFacialFeatures) {
+      console.log("Insufficient facial visibility in video:", videoData.fileName);
+      return new Response(
+        JSON.stringify({ 
+          error: "Insufficient facial visibility for analysis. Please ensure your face is clearly visible.", 
+          success: false 
+        }),
+        { status: 422, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // Generate deterministic analysis based on video properties
+    const uniqueId = generateDeterministicId(videoData);
+    const analysis = generateDeterministicAnalysis(videoData, uniqueId);
     
-    // Generate analysis with unique identifiers embedded
-    const fallbackAnalysis = {
-      analysisId: uniqueId,
-      metrics: {
-        overall: getRandomScore(75, 20),
-        eyeContact: getRandomScore(70, 30),
-        confidence: getRandomScore(80, 25),
-        bodyLanguage: getRandomScore(75, 20),
-        speaking: getRandomScore(82, 18),
-        engagement: getRandomScore(73, 22)
-      },
-      feedback: [
-        { type: "positive", text: `Good posture and confident delivery of main points (ID: ${uniqueId.slice(0, 8)})` },
-        { type: "positive", text: `Effective use of hand gestures to emphasize key information (Video: ${videoData.fileName.slice(0, 5)})` },
-        { type: "improvement", text: "Maintain more consistent eye contact with the camera" },
-        { type: "improvement", text: `Reduce use of filler words during transitions (Size: ${(videoData.fileSize / 1024 / 1024).toFixed(1)}MB)` },
-        { type: "improvement", text: `Work on maintaining energy levels throughout the presentation (ID: ${uniqueId.slice(0, 8)})` }
-      ],
-      timelineInsights: [
-        { timepoint: "0:15", insight: `Strong opening with confident posture (ID: ${uniqueId.slice(0, 8)})` },
-        { timepoint: "0:45", insight: `Good hand gestures while explaining main concept (Video: ${videoData.fileName.slice(0, 5)})` },
-        { timepoint: "1:30", insight: "Breaking eye contact when discussing technical details" },
-        { timepoint: "2:15", insight: `Increased energy when presenting conclusion (Time: ${new Date().toISOString().slice(11, 19)})` }
-      ],
-      speechMetrics: {
-        wordsPerMinute: 120 + (randomSeed % 40),
-        fillerWordRate: (2 + (randomSeed % 5)) + "%",
-        duration: Math.floor(3 + (randomSeed % 5)) + ":" + Math.floor(10 + (randomSeed % 50)).toString().padStart(2, '0')
-      },
-      transcriptId: uniqueId.slice(0, 10)
-    };
+    // Store the analysis for future consistency
+    videoFingerprints.set(videoFingerprint, analysis);
     
-    console.log("Generated analysis successfully with ID:", uniqueId);
+    console.log("Generated deterministic analysis with ID:", uniqueId);
     
     return new Response(
       JSON.stringify({
         success: true,
-        analysis: fallbackAnalysis
+        analysis: analysis
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
@@ -96,3 +106,167 @@ serve(async (req) => {
     );
   }
 });
+
+// Generate a deterministic ID based on video properties
+function generateDeterministicId(videoData) {
+  const seed = `${videoData.fileName}-${videoData.fileSize}-${ANALYSIS_VERSION}`;
+  let hash = 0;
+  for (let i = 0; i < seed.length; i++) {
+    const char = seed.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash = hash & hash; // Convert to 32bit integer
+  }
+  return Math.abs(hash).toString(16).padStart(8, '0');
+}
+
+// Simulate human detection in video
+// In a real implementation, this would use computer vision models
+function simulateHumanDetection(videoData) {
+  // For demo purposes, assume all videos have humans except those with specific keywords
+  const nonHumanKeywords = ['landscape', 'nature', 'screen-recording', 'screenshot', 'diagram'];
+  const fileName = videoData.fileName.toLowerCase();
+  
+  // Check if filename contains any non-human keywords
+  const containsNonHumanKeyword = nonHumanKeywords.some(keyword => fileName.includes(keyword));
+  
+  // For testing purposes, allow manual triggering of the "no human" error
+  if (fileName.includes('test-no-human')) {
+    return false;
+  }
+  
+  return !containsNonHumanKeyword;
+}
+
+// Simulate facial feature detection
+// In a real implementation, this would use facial detection models
+function simulateFacialFeatureDetection(videoData) {
+  // For demo purposes, assume all videos have sufficient facial visibility 
+  // except those with specific keywords
+  const poorVisibilityKeywords = ['dark', 'backlighting', 'distant', 'blur', 'masked'];
+  const fileName = videoData.fileName.toLowerCase();
+  
+  // For testing purposes, allow manual triggering of the "poor facial visibility" error
+  if (fileName.includes('test-no-face')) {
+    return false;
+  }
+  
+  return !poorVisibilityKeywords.some(keyword => fileName.includes(keyword));
+}
+
+// Generate deterministic analysis based on video properties
+function generateDeterministicAnalysis(videoData, uniqueId) {
+  // Create a deterministic seed based on video properties
+  const fileName = videoData.fileName;
+  const fileSize = videoData.fileSize;
+  
+  // Create a deterministic random number generator
+  const seededRandom = (min, max) => {
+    const seed = (fileName.length * 53) + (fileSize % 997);
+    const x = Math.sin(seed) * 10000;
+    const rand = x - Math.floor(x);
+    return Math.floor(rand * (max - min + 1)) + min;
+  };
+  
+  // Generate consistent scores based on filename and size
+  // Different files will get different scores, but the same file will always get the same scores
+  const baseScore = (fileName.length % 15) + 70; // Base score between 70-84
+  const confidenceScore = baseScore + (fileSize % 10000) / 1000; // Add some variation based on file size
+  const eyeContactScore = Math.max(60, Math.min(95, baseScore - 5 + seededRandom(-8, 8)));
+  const bodyLanguageScore = Math.max(60, Math.min(95, baseScore + 3 + seededRandom(-5, 5)));
+  const speakingScore = Math.max(65, Math.min(95, baseScore + 5 + seededRandom(-3, 10)));
+  const engagementScore = Math.max(60, Math.min(90, baseScore - 2 + seededRandom(-10, 15)));
+  
+  // Generate consistently varied feedback based on the scores
+  const feedback = generateFeedback(eyeContactScore, confidenceScore, bodyLanguageScore, fileName, uniqueId);
+  
+  // Generate timeline insights
+  const timelineInsights = generateTimelineInsights(fileName, uniqueId);
+  
+  // Generate speech metrics based on deterministic values
+  const wordsPerMinute = 115 + seededRandom(5, 45);
+  const fillerWordRate = (2 + seededRandom(0, 6)) + "%";
+  const duration = Math.floor(2 + seededRandom(1, 5)) + ":" + Math.floor(10 + seededRandom(10, 49)).toString().padStart(2, '0');
+
+  return {
+    analysisId: uniqueId,
+    analysisVersion: ANALYSIS_VERSION,
+    metrics: {
+      overall: Math.round(baseScore),
+      eyeContact: Math.round(eyeContactScore),
+      confidence: parseFloat(confidenceScore.toFixed(1)),
+      bodyLanguage: Math.round(bodyLanguageScore),
+      speaking: Math.round(speakingScore),
+      engagement: Math.round(engagementScore)
+    },
+    feedback: feedback,
+    timelineInsights: timelineInsights,
+    speechMetrics: {
+      wordsPerMinute: wordsPerMinute,
+      fillerWordRate: fillerWordRate,
+      duration: duration
+    },
+    transcriptId: uniqueId.slice(0, 8)
+  };
+}
+
+// Generate consistent feedback based on metrics
+function generateFeedback(eyeContactScore, confidenceScore, bodyLanguageScore, fileName, uniqueId) {
+  const feedback = [];
+  
+  // Positive feedback
+  if (confidenceScore > 80) {
+    feedback.push({ 
+      type: "positive", 
+      text: `Good posture and confident delivery of main points (ID: ${uniqueId.slice(0, 8)})` 
+    });
+  }
+  
+  feedback.push({ 
+    type: "positive", 
+    text: `Effective use of hand gestures to emphasize key information (Video: ${fileName.slice(0, 5)})` 
+  });
+  
+  // Improvement areas
+  if (eyeContactScore < 85) {
+    feedback.push({ 
+      type: "improvement", 
+      text: "Maintain more consistent eye contact with the camera" 
+    });
+  }
+  
+  feedback.push({ 
+    type: "improvement", 
+    text: `Reduce use of filler words during transitions (ID: ${uniqueId.slice(0, 4)})` 
+  });
+  
+  if (bodyLanguageScore < 90) {
+    feedback.push({ 
+      type: "improvement", 
+      text: `Work on maintaining energy levels throughout the presentation (ID: ${uniqueId.slice(0, 8)})` 
+    });
+  }
+  
+  return feedback;
+}
+
+// Generate consistent timeline insights
+function generateTimelineInsights(fileName, uniqueId) {
+  return [
+    { 
+      timepoint: "0:15", 
+      insight: `Strong opening with confident posture (ID: ${uniqueId.slice(0, 8)})` 
+    },
+    { 
+      timepoint: "0:45", 
+      insight: `Good hand gestures while explaining main concept (Video: ${fileName.slice(0, 5)})` 
+    },
+    { 
+      timepoint: "1:30", 
+      insight: "Breaking eye contact when discussing technical details" 
+    },
+    { 
+      timepoint: "2:15", 
+      insight: `Increased energy when presenting conclusion (ID: ${uniqueId.slice(4, 12)})` 
+    }
+  ];
+}
